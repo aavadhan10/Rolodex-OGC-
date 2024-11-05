@@ -3,8 +3,7 @@ import pandas as pd
 from anthropic import Anthropic
 import os
 
-# Load environment variables and setup Anthropic
-load_dotenv()
+# Initialize Anthropic with API key
 anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 def create_lawyer_cards(lawyers_df):
