@@ -31,6 +31,17 @@ def create_lawyer_cards(lawyers_df):
    cols = st.columns(3)
    
    for idx, (_, lawyer) in enumerate(lawyers_df.iterrows()):
+       # Skip if essential information is NA or empty
+       if (pd.isna(lawyer['Attorney']) or 
+           pd.isna(lawyer['Work Email']) or 
+           pd.isna(lawyer['Education']) or 
+           pd.isna(lawyer['Summary and Expertise']) or
+           lawyer['Attorney'].strip().lower() == 'na' or
+           lawyer['Work Email'].strip().lower() == 'na' or
+           lawyer['Education'].strip().lower() == 'na' or
+           lawyer['Summary and Expertise'].strip().lower() == 'na'):
+           continue
+           
        with cols[idx % 3]:
            with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
                expertise_bullets = [f"• {area.strip()}" for area in str(lawyer['Summary and Expertise']).split(',')]
@@ -239,10 +250,12 @@ def main():
                results_df = get_claude_response(query, filtered_df)
                if results_df is not None and not results_df.empty:
                    st.markdown("### 🎯 Top Lawyer Matches")
+                   # Updated dataframe display with custom height
                    st.dataframe(
                        results_df,
                        hide_index=True,
-                       use_container_width=True
+                       use_container_width=True,
+                       height=400  # Increased height in pixels
                    )
                    
                    # Add disclaimer
