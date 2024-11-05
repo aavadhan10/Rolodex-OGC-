@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-from anthropic import Anthropic
+from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
 import os
 
-# Initialize Anthropic with API key
-anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+# Initialize Anthropic client
+client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 def load_data():
     """Load data with different encodings"""
@@ -114,15 +114,19 @@ Important guidelines:
 - For complex matters, consider suggesting complementary expertise"""
 
     try:
-        response = anthropic.messages.create(
+        response = client.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1500,
             temperature=0.1,
-            messages=[{"role": "user", "content": prompt}]
+            system="You are a legal staffing specialist helping to match lawyers with client needs.",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
         return parse_claude_response(response.content[0].text)
     except Exception as e:
         st.error(f"Error getting recommendations: {str(e)}")
+        st.error("Exception type:", type(e))
         return None
 
 def parse_claude_response(response):
@@ -200,11 +204,11 @@ def main():
             if i % 2 == 0:
                 if col1.button(f"🔍 {example}"):
                     st.session_state.query = example
-                    st.experimental_rerun()  # Updated from st.rerun()
+                    st.experimental_rerun()
             else:
                 if col2.button(f"🔍 {example}"):
                     st.session_state.query = example
-                    st.experimental_rerun()  # Updated from st.rerun()
+                    st.experimental_rerun()
 
         # Filter lawyers based on selection
         filtered_df = lawyers_df.copy()
@@ -228,7 +232,7 @@ def main():
 
         if clear:
             st.session_state.query = ''
-            st.experimental_rerun()  # Updated from st.rerun()
+            st.experimental_rerun()
 
         # Show counts
         st.sidebar.markdown("---")
