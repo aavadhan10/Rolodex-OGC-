@@ -1,11 +1,7 @@
 import streamlit as st
 import pandas as pd
-import anthropic  # Import the base package
+import anthropic
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 def load_data():
     """Load data with different encodings"""
@@ -55,8 +51,8 @@ def create_lawyer_cards(lawyers_df):
 def get_claude_response(query, lawyers_df):
     """Get Claude's analysis of the best lawyer matches with domain knowledge"""
     try:
-        # Initialize new client
-        client = anthropic.Anthropic()
+        # Initialize client with Streamlit secret
+        client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         summary_text = "Available Lawyers and Their Expertise:\n\n"
         for _, lawyer in lawyers_df.iterrows():
