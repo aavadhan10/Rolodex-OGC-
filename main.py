@@ -200,11 +200,11 @@ def main():
             if i % 2 == 0:
                 if col1.button(f"🔍 {example}"):
                     st.session_state.query = example
-                    st.rerun()
+                    st.experimental_rerun()  # Updated from st.rerun()
             else:
                 if col2.button(f"🔍 {example}"):
                     st.session_state.query = example
-                    st.rerun()
+                    st.experimental_rerun()  # Updated from st.rerun()
 
         # Filter lawyers based on selection
         filtered_df = lawyers_df.copy()
@@ -228,7 +228,7 @@ def main():
 
         if clear:
             st.session_state.query = ''
-            st.rerun()
+            st.experimental_rerun()  # Updated from st.rerun()
 
         # Show counts
         st.sidebar.markdown("---")
