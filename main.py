@@ -6,6 +6,23 @@ import os
 # Initialize Anthropic with API key
 anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
+def load_data():
+    """Load data with different encodings"""
+    encodings_to_try = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
+    
+    for encoding in encodings_to_try:
+        try:
+            df = pd.read_csv('Cleaned_Matters_OGC.csv', encoding=encoding)
+            # Only select the columns we want
+            return df[['Attorney', 'Work Email', 'Education', 'Summary and Expertise']]
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            st.error(f"Error reading file with {encoding} encoding: {str(e)}")
+            continue
+    
+    raise Exception("Could not read the CSV file with any of the attempted encodings")
+
 def create_lawyer_cards(lawyers_df):
     """Create card layout for lawyers"""
     if lawyers_df.empty:
@@ -21,7 +38,7 @@ def create_lawyer_cards(lawyers_df):
         with cols[idx % 3]:
             with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
                 # Format expertise with bullet points
-                expertise_bullets = [f"• {area.strip()}" for area in lawyer['Summary and Expertise'].split(',')]
+                expertise_bullets = [f"• {area.strip()}" for area in str(lawyer['Summary and Expertise']).split(',')]
                 expertise_text = "\n".join(expertise_bullets)
                 
                 # Create markdown content
@@ -42,8 +59,8 @@ def get_claude_response(query, lawyers_df):
     summary_text = "Available Lawyers and Their Expertise:\n\n"
     for _, lawyer in lawyers_df.iterrows():
         summary_text += f"- {lawyer['Attorney']}\n"
-        summary_text += f"  Education: {lawyer['Education']}\n"
-        summary_text += f"  Expertise: {lawyer['Summary and Expertise']}\n\n"
+        summary_text += f"  Education: {str(lawyer['Education'])}\n"
+        summary_text += f"  Expertise: {str(lawyer['Summary and Expertise'])}\n\n"
 
     prompt = f"You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.\n\nClient Need: {query}\n\n{summary_text}\nPlease analyze the lawyers' profiles and provide the best 3-5 matches in this format:\n\nMATCH_START\nRank: 1\nName: John Smith\nKey Expertise: Corporate Law, M&A\nEducation: Harvard Law School J.D.\nRecommendation Reason: Extensive experience in corporate transactions\nMATCH_END"
 
@@ -88,8 +105,17 @@ def main():
     st.title("🧑‍⚖️ Outside GC Lawyer Matcher")
     
     try:
-        # Load data with only the columns we know exist
-        lawyers_df = pd.read_csv('Cleaned_Matters_OGC.csv')[['Attorney', 'Work Email', 'Education', 'Summary and Expertise']]
+        # Load data with encoding handling
+        lawyers_df = load_data()
+        if lawyers_df is None:
+            st.error("Failed to load lawyer data.")
+            return
+            
+        # Debug info
+        if st.sidebar.checkbox("Show Data Info"):
+            st.sidebar.write("Data Shape:", lawyers_df.shape)
+            st.sidebar.write("Columns:", list(lawyers_df.columns))
+            st.sidebar.write("Sample Data:", lawyers_df.head())
         
         # Sidebar filters
         st.sidebar.title("Filters")
@@ -97,7 +123,7 @@ def main():
         # Get practice areas
         practice_areas = []
         for expertise in lawyers_df['Summary and Expertise'].dropna():
-            practice_areas.extend([area.strip() for area in expertise.split(',')])
+            practice_areas.extend([area.strip() for area in str(expertise).split(',')])
         practice_areas = sorted(list(set(practice_areas)))
         
         # Practice area filter
@@ -134,7 +160,7 @@ def main():
         filtered_df = lawyers_df.copy()
         if selected_practice_area != "All":
             filtered_df = filtered_df[
-                filtered_df['Summary and Expertise'].str.contains(selected_practice_area, na=False, case=False)
+                filtered_df['Summary and Expertise'].str.contains(str(selected_practice_area), na=False, case=False)
             ]
         
         # Custom query input
@@ -178,6 +204,7 @@ def main():
         st.error(f"An error occurred: {str(e)}")
         if st.sidebar.checkbox("Show Debug Info"):
             st.sidebar.error(f"Error details: {str(e)}")
+            st.sidebar.write("Stack trace:", e.__traceback__)
 
 if __name__ == "__main__":
     main()
