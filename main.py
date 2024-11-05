@@ -217,7 +217,7 @@ def main():
            "Describe what you're looking for:",
            value=st.session_state.get('query', ''),
            placeholder="Example: I need an employment lawyer with retail industry experience...",
-           height=100
+           height=400
        )
 
        # Search and Clear buttons
