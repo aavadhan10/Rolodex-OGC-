@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from anthropic import Anthropic
-from dotenv import load_dotenv
 import os
 
 # Load environment variables and setup Anthropic
