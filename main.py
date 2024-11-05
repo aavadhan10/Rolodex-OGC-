@@ -111,20 +111,19 @@ Important guidelines:
 - For complex matters, consider suggesting complementary expertise"""
 
     try:
-        client = Anthropic()
-        response = client.beta.messages.create(
+        client = Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+        
+        response = client.complete(
+            prompt=f"\n\nHuman: {prompt}\n\nAssistant: ",
             model="claude-3-sonnet-20240229",
-            max_tokens=1500,
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }]
+            max_tokens_to_sample=1500,
+            temperature=0.1
         )
-        return parse_claude_response(response.content[0].text)
+        
+        return parse_claude_response(response.completion)
     except Exception as e:
         st.error("Error getting recommendations")
-        if st.sidebar.checkbox("Show Error Details"):
-            st.sidebar.error(str(e))
+        st.error(f"Detailed error: {str(e)}")
         return None
 
 def parse_claude_response(response):
