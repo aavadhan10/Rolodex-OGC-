@@ -1,212 +1,218 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import faiss
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import normalize
 from anthropic import Anthropic
-import re
-import unicodedata
-import nltk
-from nltk.corpus import wordnet
+from dotenv import load_dotenv
+import os
 
+# Load environment variables and setup Anthropic
+load_dotenv()
+anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
-# Download required NLTK data
-nltk.download('wordnet', quiet=True)
-nltk.download('averaged_perceptron_tagger', quiet=True)
-nltk.download('punkt', quiet=True)
+def get_practice_areas(lawyers_df):
+    """Extract unique practice areas from Summary and Expertise"""
+    all_areas = set()
+    for areas in lawyers_df['Summary and Expertise'].dropna():
+        areas_list = [area.strip() for area in areas.split(',')]
+        all_areas.update(areas_list)
+    return sorted(list(all_areas))
 
-def init_anthropic_client():
-    claude_api_key = st.secrets["CLAUDE_API_KEY"]
-    if not claude_api_key:
-        st.error("Anthropic API key not found. Please check your Streamlit secrets configuration.")
-        st.stop()
-    return Anthropic(api_key=claude_api_key)
-
-client = init_anthropic_client()
-
-def load_and_clean_data(file_path, encoding='utf-8'):
-    try:
-        data = pd.read_csv(file_path, encoding=encoding)
-    except UnicodeDecodeError:
-        # If UTF-8 fails, try latin-1
-        data = pd.read_csv(file_path, encoding='latin-1')
-
-    def clean_text(text):
-        if isinstance(text, str):
-            # Remove non-printable characters
-            text = ''.join(char for char in text if char.isprintable())
-            # Normalize unicode characters
-            text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
-            # Replace specific problematic sequences
-            text = text.replace('Ã¢ÂÂ', "'").replace('Ã¢ÂÂ¨', ", ")
-            # Remove any remaining unicode escape sequences
-            text = re.sub(r'\\u[0-9a-fA-F]{4}', '', text)
-            # Replace multiple spaces with a single space
-            text = re.sub(r'\s+', ' ', text).strip()
-        return text
-
-    # Clean column names
-    data.columns = data.columns.str.replace('ï»¿', '').str.replace('Ã', '').str.strip()
-
-    # Clean text in all columns
-    for col in data.columns:
-        data[col] = data[col].apply(clean_text)
-
-    # Remove unnamed columns
-    data = data.loc[:, ~data.columns.str.contains('^Unnamed')]
-
-    return data
-
-@st.cache_resource
-def create_weighted_vector_db(data):
-    weights = {
-        'Attorney': 2.0,
-        'Role Detail': 2.0,
-        'Practice Group': 1.5,
-        'Summary': 1.5,
-        'Area of Expertise': 1.5,
-        'Matter Description': 1.0
-    }
-
-    def weighted_text(row):
-        return ' '.join([
-            ' '.join([str(row[col])] * int(weight * 10))
-            for col, weight in weights.items() if col in row.index
-        ])
-
-    combined_text = data.apply(weighted_text, axis=1)
-
-    vectorizer = TfidfVectorizer(stop_words='english', max_features=5000)
-    X = vectorizer.fit_transform(combined_text)
-    X_normalized = normalize(X, norm='l2', axis=1, copy=False)
+def create_lawyer_cards(lawyers_df):
+    """Create card layout for lawyers"""
+    if lawyers_df.empty:
+        st.warning("No lawyers match the selected filters.")
+        return
+        
+    st.write("### 📊 Available Lawyers")
     
-    index = faiss.IndexFlatIP(X.shape[1])
-    index.add(np.ascontiguousarray(X_normalized.toarray()))
-    return index, vectorizer
+    lawyers_df = lawyers_df.sort_values('Attorney')
+    cols = st.columns(3)
+    
+    for idx, (_, lawyer) in enumerate(lawyers_df.iterrows()):
+        with cols[idx % 3]:
+            with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
+                st.markdown(f"""
+                **Contact:**  
+                {lawyer['Work Email']}
+                
+                **Education:**  
+                {lawyer['Education']}
+                
+                **Expertise:**  
+                • {lawyer['Summary and Expertise'].replace(', ', '\n• ')}
+                """)
 
-def call_claude(messages):
+def get_claude_response(query, lawyers_df):
+    """Get Claude's analysis of the best lawyer matches"""
+    summary_text = "Available Lawyers and Their Expertise:\n\n"
+    for _, lawyer in lawyers_df.iterrows():
+        summary_text += f"- {lawyer['Attorney']}\n"
+        summary_text += f"  Education: {lawyer['Education']}\n"
+        summary_text += f"  Expertise: {lawyer['Summary and Expertise']}\n\n"
+
+    prompt = f"""You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.
+
+Client Need: {query}
+
+{summary_text}
+
+Please analyze the lawyers' profiles and provide the best 3-5 matches in a structured format suitable for creating a table. Format your response exactly like this example, maintaining the exact delimiter structure:
+
+MATCH_START
+Rank: 1
+Name: John Smith
+Key Expertise: Corporate Law, M&A
+Education: Harvard Law School J.D.
+Recommendation Reason: Extensive experience in corporate transactions with emphasis on technology sector
+MATCH_END
+
+Important guidelines:
+- Provide 3-5 matches only
+- Keep the Recommendation Reason specific but concise (max 150 characters)
+- Focus on matching expertise to the client's specific needs
+- Use the exact delimiters shown above"""
+
     try:
-        system_message = messages[0]['content'] if messages[0]['role'] == 'system' else ""
-        user_message = next(msg['content'] for msg in messages if msg['role'] == 'user')
-        prompt = f"{system_message}\n\nHuman: {user_message}\n\nAssistant:"
-
-        response = client.completions.create(
-            model="claude-3.5",  # Updated to use Claude 3.5
-            prompt=prompt,
-            max_tokens_to_sample=500,
-            temperature=0.7
+        response = anthropic.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1500,
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
         )
-        return response.completion
+        return parse_claude_response(response.content[0].text)
     except Exception as e:
-        st.error(f"Error calling Claude: {e}")
+        st.error(f"Error getting recommendations: {str(e)}")
         return None
 
-def expand_query(query):
-    """
-    Expand the query with synonyms and related words.
-    """
-    expanded_query = []
-    for word, tag in nltk.pos_tag(nltk.word_tokenize(query)):
-        synsets = wordnet.synsets(word)
-        if synsets:
-            synonyms = set()
-            for synset in synsets:
-                synonyms.update(lemma.name().replace('_', ' ') for lemma in synset.lemmas())
-            expanded_query.extend(list(synonyms)[:3])  # Limit to 3 synonyms per word
-        expanded_query.append(word)
-    return ' '.join(expanded_query)
-
-def normalize_query(query):
-    """
-    Normalize the query by removing punctuation and converting to lowercase.
-    """
-    query = re.sub(r'[^\w\s]', '', query)
-    return query.lower()
-
-def query_claude_with_data(question, matters_data, matters_index, matters_vectorizer):
-    # Normalize and expand the question
-    normalized_question = normalize_query(question)
-    expanded_question = expand_query(normalized_question)
+def parse_claude_response(response):
+    """Parse Claude's response into a structured format"""
+    matches = []
+    for match in response.split('MATCH_START')[1:]:
+        match_data = {}
+        lines = match.split('MATCH_END')[0].strip().split('\n')
+        
+        for line in lines:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                match_data[key.strip()] = value.strip()
+        
+        if match_data:
+            matches.append(match_data)
     
-    question_vec = matters_vectorizer.transform([expanded_question])
-    D, I = matters_index.search(normalize(question_vec).toarray(), k=5)  # Increased k to 30
+    df = pd.DataFrame(matches)
+    if not df.empty:
+        desired_columns = ['Rank', 'Name', 'Key Expertise', 'Education', 'Recommendation Reason']
+        # Only include columns that exist in the DataFrame
+        existing_columns = [col for col in desired_columns if col in df.columns]
+        df = df[existing_columns]
+        if 'Rank' in df.columns:
+            df['Rank'] = pd.to_numeric(df['Rank'])
+            df = df.sort_values('Rank')
+    
+    return df
 
-    relevant_data = matters_data.iloc[I[0]]
+def display_recommendations(query, lawyers_df):
+    """Display lawyer recommendations in a formatted table"""
+    with st.spinner("Finding the best matches..."):
+        results_df = get_claude_response(query, lawyers_df)
+        
+        if results_df is not None and not results_df.empty:
+            st.markdown("### 🎯 Top Lawyer Matches")
+            st.dataframe(
+                results_df,
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.warning("No matching lawyers found for your specific needs. Try adjusting your search criteria.")
 
-    # Calculate relevance scores
-    relevance_scores = 1 / (1 + D[0])
-    relevant_data['relevance_score'] = relevance_scores
+def main():
+    st.title("🧑‍⚖️ Outside GC Lawyer Matcher")
+    
+    try:
+        # Load data with only the columns we know exist
+        lawyers_df = pd.read_csv('Cleaned_Matters_OGC.csv')[['Attorney', 'Work Email', 'Education', 'Summary and Expertise']]
+        
+        # Sidebar filters
+        st.sidebar.title("Filters")
+        
+        # Get practice areas
+        practice_areas = []
+        for expertise in lawyers_df['Summary and Expertise'].dropna():
+            practice_areas.extend([area.strip() for area in expertise.split(',')])
+        practice_areas = sorted(list(set(practice_areas)))
+        
+        # Practice area filter
+        selected_practice_area = st.sidebar.selectbox(
+            "Practice Area",
+            ["All"] + practice_areas
+        )
+        
+        # Main content area
+        st.write("### How can we help you find the right lawyer?")
+        st.write("Tell us about your legal needs and we'll match you with the best available lawyers.")
+        
+        # Example queries
+        examples = [
+            "I need a lawyer experienced in intellectual property and software licensing",
+            "Looking for someone who handles business startups and corporate governance",
+            "Need help with technology transactions and SaaS agreements",
+            "Who would be best for mergers and acquisitions in the technology sector?"
+        ]
+        
+        # Example query buttons
+        col1, col2 = st.columns(2)
+        for i, example in enumerate(examples):
+            if i % 2 == 0:
+                if col1.button(f"🔍 {example}"):
+                    st.session_state.query = example
+                    st.rerun()
+            else:
+                if col2.button(f"🔍 {example}"):
+                    st.session_state.query = example
+                    st.rerun()
 
-    # Sort by relevance score
-    relevant_data = relevant_data.sort_values('relevance_score', ascending=False)
+        # Filter lawyers based on selection
+        filtered_df = lawyers_df.copy()
+        if selected_practice_area != "All":
+            filtered_df = filtered_df[
+                filtered_df['Summary and Expertise'].str.contains(selected_practice_area, na=False, case=False)
+            ]
+        
+        # Custom query input
+        query = st.text_area(
+            "For more specific matching, describe what you're looking for:",
+            value=st.session_state.get('query', ''),
+            placeholder="Example: I need help with intellectual property and software licensing...",
+            height=100
+        )
 
-    # Get unique lawyers
-    unique_lawyers = relevant_data['Attorney'].unique()
+        # Search and Clear buttons
+        col1, col2 = st.columns([1, 4])
+        search = col1.button("🔎 Search")
+        clear = col2.button("Clear")
 
-    # Ensure we have at least 3 unique lawyers (if available)
-    if len(unique_lawyers) < 3:
-        additional_lawyers = matters_data[~matters_data['Attorney'].isin(unique_lawyers)].sample(min(3 - len(unique_lawyers), len(matters_data) - len(unique_lawyers)))
-        relevant_data = pd.concat([relevant_data, additional_lawyers])
+        if clear:
+            st.session_state.query = ''
+            st.rerun()
 
-    # Get top 3 unique lawyers
-    top_lawyers = relevant_data['Attorney'].unique()[:3]
+        # Show counts
+        st.sidebar.markdown("---")
+        st.sidebar.markdown(f"**Showing:** {len(filtered_df)} lawyers")
+        
+        # Show recommendations or all lawyers
+        if search and query:
+            display_recommendations(query, filtered_df)
+        else:
+            create_lawyer_cards(filtered_df)
+            
+    except FileNotFoundError:
+        st.error("Could not find the required data file. Please check the file location.")
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        if st.sidebar.checkbox("Show Debug Info"):
+            st.sidebar.error(f"Error details: {str(e)}")
 
-    # Get all matters for top 3 lawyers, sorted by relevance
-    top_relevant_data = relevant_data[relevant_data['Attorney'].isin(top_lawyers)].sort_values('relevance_score', ascending=False)
-
-    primary_info = top_relevant_data[['Attorney', 'Work Email', 'Role Detail', 'Practice Group', 'Summary', 'Area of Expertise']].drop_duplicates(subset=['Attorney'])
-    secondary_info = top_relevant_data[['Attorney', 'Matter Description', 'relevance_score']]
-
-    primary_context = primary_info.to_string(index=False)
-    secondary_context = secondary_info.to_string(index=False)
-
-    messages = [
-        {"role": "system", "content": "You are an expert legal consultant tasked with recommending the best lawyers based on the given information. Analyze the primary information about the lawyers and consider the secondary information about their matters to refine your recommendation. Pay attention to the relevance scores provided."},
-        {"role": "user", "content": f"Question: {question}\n\nTop Lawyers Information:\n{primary_context}\n\nRelated Matters (including relevance scores):\n{secondary_context}\n\nBased on all this information, provide your final recommendation for the most suitable lawyer(s) and explain your reasoning in detail. Consider the relevance scores when making your recommendation. Recommend up to 3 lawyers, discussing their relevant experience and matters they've worked on. If fewer than 3 lawyers are relevant, only recommend those who are truly suitable."}
-    ]
-
-    claude_response = call_claude(messages)
-    if not claude_response:
-        return
-
-    st.write("### Claude's Recommendation:")
-    st.write(claude_response)
-
-    st.write("### Top Recommended Lawyer(s) Information:")
-    st.write(primary_info.to_html(index=False), unsafe_allow_html=True)
-
-    st.write("### Related Matters of Recommended Lawyer(s):")
-    st.write(secondary_info.to_html(index=False), unsafe_allow_html=True)
-
-# Streamlit app layout
-st.title("Rolodex AI OGC: Find Your Legal Match 👨‍⚖️ Utilizing Claude 3.5")
-st.write("Ask questions about the skill-matched lawyers for your specific legal needs and their availability:")
-
-default_questions = {
-    "Which attorneys have the most experience with intellectual property?": "intellectual property",
-    "Can you recommend a lawyer specializing in employment law?": "employment law",
-    "Who are the best litigators for financial cases?": "financial law",
-    "Which lawyer should I contact for real estate matters?": "real estate"
-}
-
-user_input = st.text_input("Type your question:", placeholder="e.g., 'Who are the top lawyers for corporate law?'")
-
-for question, _ in default_questions.items():
-    if st.button(question):
-        user_input = question
-        break
-
-if user_input:
-    progress_bar = st.progress(0)
-    progress_bar.progress(10)
-    matters_data = load_and_clean_data('Cleaned_Matters_OGC.csv')
-    if not matters_data.empty:
-        progress_bar.progress(50)
-        matters_index, matters_vectorizer = create_weighted_vector_db(matters_data)
-        progress_bar.progress(90)
-        query_claude_with_data(user_input, matters_data, matters_index, matters_vectorizer)
-        progress_bar.progress(100)
-    else:
-        st.error("Failed to load data.")
-    progress_bar.empty()
+if __name__ == "__main__":
+    main()
