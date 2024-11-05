@@ -242,7 +242,8 @@ def main():
                    st.dataframe(
                        results_df,
                        hide_index=True,
-                       use_container_width=True
+                       use_container_width=True,
+                       height=400
                    )
                    
                    # Add disclaimer
