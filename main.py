@@ -92,7 +92,7 @@ def call_claude(messages):
         prompt = f"{system_message}\n\nHuman: {user_message}\n\nAssistant:"
 
         response = client.completions.create(
-            model="claude-2.1",
+            model="claude-3.5",  # Updated to use Claude 3.5
             prompt=prompt,
             max_tokens_to_sample=500,
             temperature=0.7
