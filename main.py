@@ -8,14 +8,6 @@ import os
 load_dotenv()
 anthropic = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
-def get_practice_areas(lawyers_df):
-    """Extract unique practice areas from Summary and Expertise"""
-    all_areas = set()
-    for areas in lawyers_df['Summary and Expertise'].dropna():
-        areas_list = [area.strip() for area in areas.split(',')]
-        all_areas.update(areas_list)
-    return sorted(list(all_areas))
-
 def create_lawyer_cards(lawyers_df):
     """Create card layout for lawyers"""
     if lawyers_df.empty:
@@ -30,14 +22,22 @@ def create_lawyer_cards(lawyers_df):
     for idx, (_, lawyer) in enumerate(lawyers_df.iterrows()):
         with cols[idx % 3]:
             with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
-                st.markdown(
-                    f"**Contact:**  \n"
-                    f"{lawyer['Work Email']}\n\n"
-                    f"**Education:**  \n"
-                    f"{lawyer['Education']}\n\n"
-                    f"**Expertise:**  \n"
-                    f"• {lawyer['Summary and Expertise'].replace(', ', '\n• ')}"
-                )
+                # Format expertise with bullet points
+                expertise_bullets = [f"• {area.strip()}" for area in lawyer['Summary and Expertise'].split(',')]
+                expertise_text = "\n".join(expertise_bullets)
+                
+                # Create markdown content
+                content = f"""
+**Contact:**
+{lawyer['Work Email']}
+
+**Education:**
+{lawyer['Education']}
+
+**Expertise:**
+{expertise_text}
+"""
+                st.markdown(content)
 
 def get_claude_response(query, lawyers_df):
     """Get Claude's analysis of the best lawyer matches"""
@@ -47,33 +47,13 @@ def get_claude_response(query, lawyers_df):
         summary_text += f"  Education: {lawyer['Education']}\n"
         summary_text += f"  Expertise: {lawyer['Summary and Expertise']}\n\n"
 
-    prompt = (
-        f"You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.\n\n"
-        f"Client Need: {query}\n\n"
-        f"{summary_text}\n"
-        "Please analyze the lawyers' profiles and provide the best 3-5 matches in this format:\n\n"
-        "MATCH_START\n"
-        "Rank: 1\n"
-        "Name: John Smith\n"
-        "Key Expertise: Corporate Law, M&A\n"
-        "Education: Harvard Law School J.D.\n"
-        "Recommendation Reason: Extensive experience in corporate transactions with emphasis on technology sector\n"
-        "MATCH_END\n\n"
-        "Important guidelines:\n"
-        "- Provide 3-5 matches only\n"
-        "- Keep the Recommendation Reason specific but concise (max 150 characters)\n"
-        "- Focus on matching expertise to the client's specific needs\n"
-        "- Use the exact delimiters shown above"
-    )
+    prompt = f"You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.\n\nClient Need: {query}\n\n{summary_text}\nPlease analyze the lawyers' profiles and provide the best 3-5 matches in this format:\n\nMATCH_START\nRank: 1\nName: John Smith\nKey Expertise: Corporate Law, M&A\nEducation: Harvard Law School J.D.\nRecommendation Reason: Extensive experience in corporate transactions\nMATCH_END"
 
     try:
         response = anthropic.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1500,
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }]
+            messages=[{"role": "user", "content": prompt}]
         )
         return parse_claude_response(response.content[0].text)
     except Exception as e:
@@ -105,21 +85,6 @@ def parse_claude_response(response):
             df = df.sort_values('Rank')
     
     return df
-
-def display_recommendations(query, lawyers_df):
-    """Display lawyer recommendations in a formatted table"""
-    with st.spinner("Finding the best matches..."):
-        results_df = get_claude_response(query, lawyers_df)
-        
-        if results_df is not None and not results_df.empty:
-            st.markdown("### 🎯 Top Lawyer Matches")
-            st.dataframe(
-                results_df,
-                hide_index=True,
-                use_container_width=True
-            )
-        else:
-            st.warning("No matching lawyers found for your specific needs. Try adjusting your search criteria.")
 
 def main():
     st.title("🧑‍⚖️ Outside GC Lawyer Matcher")
@@ -197,7 +162,15 @@ def main():
         
         # Show recommendations or all lawyers
         if search and query:
-            display_recommendations(query, filtered_df)
+            with st.spinner("Finding the best matches..."):
+                results_df = get_claude_response(query, filtered_df)
+                if results_df is not None and not results_df.empty:
+                    st.markdown("### 🎯 Top Lawyer Matches")
+                    st.dataframe(
+                        results_df,
+                        hide_index=True,
+                        use_container_width=True
+                    )
         else:
             create_lawyer_cards(filtered_df)
             
