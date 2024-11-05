@@ -13,7 +13,6 @@ def load_data():
     for encoding in encodings_to_try:
         try:
             df = pd.read_csv('Cleaned_Matters_OGC.csv', encoding=encoding)
-            # Only select the columns we want
             return df[['Attorney', 'Work Email', 'Education', 'Summary and Expertise']]
         except UnicodeDecodeError:
             continue
@@ -37,11 +36,9 @@ def create_lawyer_cards(lawyers_df):
     for idx, (_, lawyer) in enumerate(lawyers_df.iterrows()):
         with cols[idx % 3]:
             with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
-                # Format expertise with bullet points
                 expertise_bullets = [f"• {area.strip()}" for area in str(lawyer['Summary and Expertise']).split(',')]
                 expertise_text = "\n".join(expertise_bullets)
                 
-                # Create markdown content
                 content = f"""
 **Contact:**
 {lawyer['Work Email']}
@@ -55,19 +52,72 @@ def create_lawyer_cards(lawyers_df):
                 st.markdown(content)
 
 def get_claude_response(query, lawyers_df):
-    """Get Claude's analysis of the best lawyer matches"""
+    """Get Claude's analysis of the best lawyer matches with domain knowledge"""
     summary_text = "Available Lawyers and Their Expertise:\n\n"
     for _, lawyer in lawyers_df.iterrows():
         summary_text += f"- {lawyer['Attorney']}\n"
         summary_text += f"  Education: {str(lawyer['Education'])}\n"
         summary_text += f"  Expertise: {str(lawyer['Summary and Expertise'])}\n\n"
 
-    prompt = f"You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.\n\nClient Need: {query}\n\n{summary_text}\nPlease analyze the lawyers' profiles and provide the best 3-5 matches in this format:\n\nMATCH_START\nRank: 1\nName: John Smith\nKey Expertise: Corporate Law, M&A\nEducation: Harvard Law School J.D.\nRecommendation Reason: Extensive experience in corporate transactions\nMATCH_END"
+    prompt = f"""You are a legal staffing specialist at Outside General Counsel (OGC) with deep knowledge of the attorneys' capabilities and specialties. Your task is to match client needs with the most appropriate lawyers based on their expertise, background, and known capabilities.
+
+Client Need: {query}
+
+{summary_text}
+
+Please analyze the lawyers' profiles and recommend matches based on these important guidelines:
+
+1. For employment law queries:
+   - Patricia Lantzy, Margaret Scheele, Sarah Biran, and Lorna Hebert are the key employment attorneys
+   - Note that no employment lawyer works more than 85 hours per month
+
+2. For corporate formation:
+   - Key experts include Kristin Kreuder, Michael Mendelson, Bruce Friedman, Leonard McGill, Nicole Desharnais, Chandana Rao, Caroline McCaffrey
+   - Susan Antonio has expertise but limited availability
+
+3. For trademark work:
+   - Primary experts are Wade Savoy, Michelle Roseberg, and Jessica Davis
+
+4. For HIPAA and BAAs:
+   - Core experts are Holly Little, Bob Michitarian, Mark Feingold, Michael Brown, Marty Lipman
+   - Fritz Backus and Raymond Sczudlo have limited HIPAA experience
+   - Brian Heller should be noted as having NO HIPAA experience
+
+5. For specialized areas:
+   - FDA/Pharma: Mark Mansour (primary), Berry Cappucci, Jordan Karp, Holly Little, Elizabeth Smith (limited)
+   - Data Privacy: Caroline McCaffrey, Mark Johnson, Lori Ross, Stephan Grynwajc, Lakshmi Ramani
+   - Real Estate: Josh Miller, James Duberman, Michael Plantamura
+   - Social Media/Influencer: Stacey Heller, Chandana Rao, Joseph Tedeschi, Bruce Friedman, Ted Stern, Brad Auerbach
+   - Satellite/Aerospace: Michael Mendelson, Don Levy, Donnellda Rice, Ron Jarvis
+   - DAFs: Anita Drummond, Lakshmi Ramani
+   - Content/Media Licensing: Ted Stern, Brian Heller, Joseph Tedeschi, Chandana Rao, Andy Friedman
+   - Commercial Real Estate: Josh Miller, James Duberman, Michael Plantamura
+   - Equity Compensation: Nicole Desharnais, Leonard McGill, Don Levy
+   - Retail Industry: Stacey Heller (big box), Billie Audia Munro (big box), Chandana Rao (fashion)
+
+Please provide matches in this exact format:
+
+MATCH_START
+Rank: 1
+Name: [Attorney Name]
+Key Expertise: [Relevant expertise for this query]
+Recommendation Reason: [Why this lawyer is appropriate, including any caveats or limitations]
+MATCH_END
+
+Important guidelines:
+- Include relevant warnings about availability or expertise limitations
+- For high-workload requests (>85 hours/month), recommend a team approach
+- Note when specialized industry knowledge exists
+- If no attorney fully matches the requirements, explain why and suggest alternatives
+- Order recommendations by expertise relevance and availability
+- Mention any potential conflicts or limitations clearly
+- For complex matters, consider suggesting complementary expertise"""
 
     try:
         response = anthropic.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1500,
+            temperature=0.1,
             messages=[{"role": "user", "content": prompt}]
         )
         return parse_claude_response(response.content[0].text)
@@ -92,7 +142,7 @@ def parse_claude_response(response):
     
     df = pd.DataFrame(matches)
     if not df.empty:
-        desired_columns = ['Rank', 'Name', 'Key Expertise', 'Education', 'Recommendation Reason']
+        desired_columns = ['Rank', 'Name', 'Key Expertise', 'Recommendation Reason']
         existing_columns = [col for col in desired_columns if col in df.columns]
         df = df[existing_columns]
         if 'Rank' in df.columns:
@@ -105,7 +155,6 @@ def main():
     st.title("🧑‍⚖️ Outside GC Lawyer Matcher")
     
     try:
-        # Load data with encoding handling
         lawyers_df = load_data()
         if lawyers_df is None:
             st.error("Failed to load lawyer data.")
@@ -117,7 +166,6 @@ def main():
             st.sidebar.write("Columns:", list(lawyers_df.columns))
             st.sidebar.write("Sample Data:", lawyers_df.head())
         
-        # Sidebar filters
         st.sidebar.title("Filters")
         
         # Get practice areas
@@ -132,16 +180,18 @@ def main():
             ["All"] + practice_areas
         )
         
-        # Main content area
         st.write("### How can we help you find the right lawyer?")
-        st.write("Tell us about your legal needs and we'll match you with the best available lawyers.")
         
-        # Example queries
+        # Example queries based on common requests
         examples = [
-            "I need a lawyer experienced in intellectual property and software licensing",
-            "Looking for someone who handles business startups and corporate governance",
-            "Need help with technology transactions and SaaS agreements",
-            "Who would be best for mergers and acquisitions in the technology sector?"
+            "Show me an available employment attorney",
+            "Who can help with HIPAA and BAAs?",
+            "I need a lawyer for trademark work",
+            "Looking for someone with FDA and pharmaceutical experience",
+            "Need help with data privacy and cybersecurity",
+            "Who can help with social media and influencer agreements?",
+            "Looking for a commercial real estate lawyer",
+            "Need help with equity compensation plans"
         ]
         
         # Example query buttons
@@ -165,9 +215,9 @@ def main():
         
         # Custom query input
         query = st.text_area(
-            "For more specific matching, describe what you're looking for:",
+            "Describe what you're looking for:",
             value=st.session_state.get('query', ''),
-            placeholder="Example: I need help with intellectual property and software licensing...",
+            placeholder="Example: I need an employment lawyer with retail industry experience...",
             height=100
         )
 
@@ -195,6 +245,12 @@ def main():
                         hide_index=True,
                         use_container_width=True
                     )
+                    
+                    # Add disclaimer
+                    st.info("""
+                    ℹ️ These recommendations are based on known expertise and availability. 
+                    Please confirm specific details and availability with the lawyers directly.
+                    """)
         else:
             create_lawyer_cards(filtered_df)
             
@@ -204,7 +260,6 @@ def main():
         st.error(f"An error occurred: {str(e)}")
         if st.sidebar.checkbox("Show Debug Info"):
             st.sidebar.error(f"Error details: {str(e)}")
-            st.sidebar.write("Stack trace:", e.__traceback__)
 
 if __name__ == "__main__":
     main()
