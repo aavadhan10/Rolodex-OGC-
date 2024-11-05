@@ -1,10 +1,7 @@
 import streamlit as st
 import pandas as pd
-from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
+from anthropic import Anthropic
 import os
-
-# Initialize Anthropic client
-client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 def load_data():
     """Load data with different encodings"""
@@ -114,19 +111,20 @@ Important guidelines:
 - For complex matters, consider suggesting complementary expertise"""
 
     try:
-        response = client.messages.create(
+        client = Anthropic()
+        response = client.beta.messages.create(
             model="claude-3-sonnet-20240229",
             max_tokens=1500,
-            temperature=0.1,
-            system="You are a legal staffing specialist helping to match lawyers with client needs.",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
         )
         return parse_claude_response(response.content[0].text)
     except Exception as e:
-        st.error(f"Error getting recommendations: {str(e)}")
-        st.error("Exception type:", type(e))
+        st.error("Error getting recommendations")
+        if st.sidebar.checkbox("Show Error Details"):
+            st.sidebar.error(str(e))
         return None
 
 def parse_claude_response(response):
