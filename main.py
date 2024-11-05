@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
-from anthropic import Anthropic
+import anthropic  # Import the base package
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def load_data():
     """Load data with different encodings"""
@@ -50,15 +54,25 @@ def create_lawyer_cards(lawyers_df):
 
 def get_claude_response(query, lawyers_df):
     """Get Claude's analysis of the best lawyer matches with domain knowledge"""
-    summary_text = "Available Lawyers and Their Expertise:\n\n"
-    for _, lawyer in lawyers_df.iterrows():
-        summary_text += f"- {lawyer['Attorney']}\n"
-        summary_text += f"  Education: {str(lawyer['Education'])}\n"
-        summary_text += f"  Expertise: {str(lawyer['Summary and Expertise'])}\n\n"
+    try:
+        # Initialize new client
+        client = anthropic.Anthropic()
+        
+        summary_text = "Available Lawyers and Their Expertise:\n\n"
+        for _, lawyer in lawyers_df.iterrows():
+            summary_text += f"- {lawyer['Attorney']}\n"
+            summary_text += f"  Education: {str(lawyer['Education'])}\n"
+            summary_text += f"  Expertise: {str(lawyer['Summary and Expertise'])}\n\n"
 
-    prompt = f"""You are a legal staffing specialist at Outside General Counsel (OGC) with deep knowledge of the attorneys' capabilities and specialties. Your task is to match client needs with the most appropriate lawyers based on their expertise, background, and known capabilities.
-
-Client Need: {query}
+        system_prompt = "You are a legal staffing specialist helping to match lawyers with client needs."
+        
+        message = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            system=system_prompt,
+            temperature=0.1,
+            messages=[{
+                "role": "user", 
+                "content": f"""Client Need: {query}
 
 {summary_text}
 
@@ -99,32 +113,16 @@ Rank: 1
 Name: [Attorney Name]
 Key Expertise: [Relevant expertise for this query]
 Recommendation Reason: [Why this lawyer is appropriate, including any caveats or limitations]
-MATCH_END
-
-Important guidelines:
-- Include relevant warnings about availability or expertise limitations
-- For high-workload requests (>85 hours/month), recommend a team approach
-- Note when specialized industry knowledge exists
-- If no attorney fully matches the requirements, explain why and suggest alternatives
-- Order recommendations by expertise relevance and availability
-- Mention any potential conflicts or limitations clearly
-- For complex matters, consider suggesting complementary expertise"""
-
-    try:
-        client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        
-        response = client.messages.create(
-            model="claude-3-sonnet-20240229",
-            max_tokens=1500,
-            system="You are a legal staffing specialist helping to match lawyers with client needs.",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+MATCH_END"""
+            }]
         )
-        return parse_claude_response(response.content[0].text)
+        
+        return parse_claude_response(message.content[0].text)
+
     except Exception as e:
         st.error("Error getting recommendations")
         st.sidebar.error(f"API Error Details: {str(e)}")
+        st.sidebar.error(f"Error Type: {type(e)}")
         return None
 
 def parse_claude_response(response):
