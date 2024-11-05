@@ -66,6 +66,7 @@ def get_claude_response(query, lawyers_df):
             model="claude-3-sonnet-20240229",
             system=system_prompt,
             temperature=0.1,
+            max_tokens=1500,
             messages=[{
                 "role": "user", 
                 "content": f"""Client Need: {query}
@@ -113,7 +114,7 @@ MATCH_END"""
             }]
         )
         
-        return parse_claude_response(message.content[0].text)
+        return parse_claude_response(message.content)
 
     except Exception as e:
         st.error("Error getting recommendations")
