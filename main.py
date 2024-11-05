@@ -30,16 +30,14 @@ def create_lawyer_cards(lawyers_df):
     for idx, (_, lawyer) in enumerate(lawyers_df.iterrows()):
         with cols[idx % 3]:
             with st.expander(f"🧑‍⚖️ {lawyer['Attorney']}", expanded=False):
-                st.markdown(f"""
-                **Contact:**  
-                {lawyer['Work Email']}
-                
-                **Education:**  
-                {lawyer['Education']}
-                
-                **Expertise:**  
-                • {lawyer['Summary and Expertise'].replace(', ', '\n• ')}
-                """)
+                st.markdown(
+                    f"**Contact:**  \n"
+                    f"{lawyer['Work Email']}\n\n"
+                    f"**Education:**  \n"
+                    f"{lawyer['Education']}\n\n"
+                    f"**Expertise:**  \n"
+                    f"• {lawyer['Summary and Expertise'].replace(', ', '\n• ')}"
+                )
 
 def get_claude_response(query, lawyers_df):
     """Get Claude's analysis of the best lawyer matches"""
@@ -49,27 +47,24 @@ def get_claude_response(query, lawyers_df):
         summary_text += f"  Education: {lawyer['Education']}\n"
         summary_text += f"  Expertise: {lawyer['Summary and Expertise']}\n\n"
 
-    prompt = f"""You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.
-
-Client Need: {query}
-
-{summary_text}
-
-Please analyze the lawyers' profiles and provide the best 3-5 matches in a structured format suitable for creating a table. Format your response exactly like this example, maintaining the exact delimiter structure:
-
-MATCH_START
-Rank: 1
-Name: John Smith
-Key Expertise: Corporate Law, M&A
-Education: Harvard Law School J.D.
-Recommendation Reason: Extensive experience in corporate transactions with emphasis on technology sector
-MATCH_END
-
-Important guidelines:
-- Provide 3-5 matches only
-- Keep the Recommendation Reason specific but concise (max 150 characters)
-- Focus on matching expertise to the client's specific needs
-- Use the exact delimiters shown above"""
+    prompt = (
+        f"You are a legal staffing assistant. Your task is to match client needs with available lawyers based on their expertise and background.\n\n"
+        f"Client Need: {query}\n\n"
+        f"{summary_text}\n"
+        "Please analyze the lawyers' profiles and provide the best 3-5 matches in this format:\n\n"
+        "MATCH_START\n"
+        "Rank: 1\n"
+        "Name: John Smith\n"
+        "Key Expertise: Corporate Law, M&A\n"
+        "Education: Harvard Law School J.D.\n"
+        "Recommendation Reason: Extensive experience in corporate transactions with emphasis on technology sector\n"
+        "MATCH_END\n\n"
+        "Important guidelines:\n"
+        "- Provide 3-5 matches only\n"
+        "- Keep the Recommendation Reason specific but concise (max 150 characters)\n"
+        "- Focus on matching expertise to the client's specific needs\n"
+        "- Use the exact delimiters shown above"
+    )
 
     try:
         response = anthropic.messages.create(
@@ -103,7 +98,6 @@ def parse_claude_response(response):
     df = pd.DataFrame(matches)
     if not df.empty:
         desired_columns = ['Rank', 'Name', 'Key Expertise', 'Education', 'Recommendation Reason']
-        # Only include columns that exist in the DataFrame
         existing_columns = [col for col in desired_columns if col in df.columns]
         df = df[existing_columns]
         if 'Rank' in df.columns:
