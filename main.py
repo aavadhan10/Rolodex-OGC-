@@ -111,19 +111,20 @@ Important guidelines:
 - For complex matters, consider suggesting complementary expertise"""
 
     try:
-        client = Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+        client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
-        response = client.complete(
-            prompt=f"\n\nHuman: {prompt}\n\nAssistant: ",
+        response = client.messages.create(
             model="claude-3-sonnet-20240229",
-            max_tokens_to_sample=1500,
-            temperature=0.1
+            max_tokens=1500,
+            system="You are a legal staffing specialist helping to match lawyers with client needs.",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
-        
-        return parse_claude_response(response.completion)
+        return parse_claude_response(response.content[0].text)
     except Exception as e:
         st.error("Error getting recommendations")
-        st.error(f"Detailed error: {str(e)}")
+        st.sidebar.error(f"API Error Details: {str(e)}")
         return None
 
 def parse_claude_response(response):
