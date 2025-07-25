@@ -74,7 +74,7 @@ def get_claude_response(query, lawyers_df):
        system_prompt = "You are a legal staffing specialist helping to match lawyers with client needs."
        
        message = client.messages.create(
-           model="claude-sonnet-4-20250514",  # Updated to Claude Sonnet 4
+           model="claude-3-5-sonnet-20241022",  # Updated to Claude 3.5 Sonnet (latest stable)
            system=system_prompt,
            temperature=0.1,
            max_tokens=1500,
