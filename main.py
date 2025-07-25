@@ -74,7 +74,7 @@ def get_claude_response(query, lawyers_df):
        system_prompt = "You are a legal staffing specialist helping to match lawyers with client needs."
        
        message = client.messages.create(
-           model="claude-3-sonnet-20240229",
+           model="claude-sonnet-4-20250514",  # Updated to Claude Sonnet 4
            system=system_prompt,
            temperature=0.1,
            max_tokens=1500,
@@ -210,11 +210,11 @@ def main():
            if i % 2 == 0:
                if col1.button(f"🔍 {example}"):
                    st.session_state.query = example
-                   st.experimental_rerun()
+                   st.rerun()  # Updated from st.experimental_rerun()
            else:
                if col2.button(f"🔍 {example}"):
                    st.session_state.query = example
-                   st.experimental_rerun()
+                   st.rerun()  # Updated from st.experimental_rerun()
 
        # Filter lawyers based on selection
        filtered_df = lawyers_df.copy()
@@ -238,7 +238,7 @@ def main():
 
        if clear:
            st.session_state.query = ''
-           st.experimental_rerun()
+           st.rerun()  # Updated from st.experimental_rerun()
 
        # Show counts
        st.sidebar.markdown("---")
